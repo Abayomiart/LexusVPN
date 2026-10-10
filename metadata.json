@@ -1,0 +1,6 @@
+{
+  "name": "NovaVPN Android",
+  "description": "Aplicação Android VPN moderna em Kotlin, Jetpack Compose, Material 3, MVVM, Room, Keystore e VpnService.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
