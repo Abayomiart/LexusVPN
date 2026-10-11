@@ -1,94 +1,37 @@
 
-name: Compilar NEXUS VPN
+name: Build NEXUS VPN APK
 
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-
-permissions:
-  contents: read
+      - master
 
 jobs:
   build:
-    name: Compilar APK Android
     runs-on: ubuntu-latest
 
     steps:
-      - name: Obter codigo do repositorio
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Instalar Java
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Verificar ficheiros do projeto
-        run: |
-          echo "Conteudo do repositorio:"
-          ls -la
-          echo "Procurar configuracao Gradle:"
-          find . -maxdepth 5 -type f \( \
-            -name 'gradlew' -o \
-            -name 'settings.gradle' -o \
-            -name 'settings.gradle.kts' -o \
-            -name 'build.gradle' -o \
-            -name 'build.gradle.kts' \
-          \)
-
-      - name: Localizar projeto Android
-        id: project
-        shell: bash
-        run: |
-          WRAPPER="$(find . -maxdepth 5 -type f -name gradlew | head -n 1)"
-
-          if [ -n "$WRAPPER" ]; then
-            PROJECT_DIR="$(dirname "$WRAPPER")"
-            chmod +x "$WRAPPER"
-            echo "mode=wrapper" >> "$GITHUB_OUTPUT"
-            echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          SETTINGS="$(find . -maxdepth 5 -type f \( \
-            -name settings.gradle -o \
-            -name settings.gradle.kts \
-          \) | head -n 1)"
-
-          if [ -z "$SETTINGS" ]; then
-            echo "ERRO: nao foi encontrado gradlew nem settings.gradle."
-            echo "Envia o projeto Android completo, extraido do ZIP."
-            exit 1
-          fi
-
-          PROJECT_DIR="$(dirname "$SETTINGS")"
-          echo "mode=system" >> "$GITHUB_OUTPUT"
-          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-
-      - name: Instalar Gradle
-        if: steps.project.outputs.mode == 'system'
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
 
-      - name: Compilar APK
-        working-directory: ${{ steps.project.outputs.dir }}
-        shell: bash
+      - name: Build APK
         run: |
-          if [ "${{ steps.project.outputs.mode }}" = "wrapper" ]; then
-            ./gradlew assembleDebug --no-daemon --stacktrace
-          else
-            gradle assembleDebug --no-daemon --stacktrace
-          fi
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
-      - name: Guardar APK
-        if: success()
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: NEXUS-VPN-APK
-          path: |
-            **/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          retention-days: 7
+          path: app/build/outputs/apk/debug/*.apk
