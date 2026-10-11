@@ -19,52 +19,71 @@ jobs:
       - name: Obter codigo do repositorio
         uses: actions/checkout@v4
 
-      - name: Instalar Java 17
+      - name: Instalar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
-      - name: Verificar estrutura do projeto
+      - name: Verificar ficheiros do projeto
         run: |
-          echo "Diretorio atual:"
-          pwd
-          echo "Ficheiros do projeto:"
+          echo "Conteudo do repositorio:"
           ls -la
-          echo "Procurar Gradle Wrapper:"
-          find . -maxdepth 4 -name gradlew -type f
+          echo "Procurar configuracao Gradle:"
+          find . -maxdepth 5 -type f \( \
+            -name 'gradlew' -o \
+            -name 'settings.gradle' -o \
+            -name 'settings.gradle.kts' -o \
+            -name 'build.gradle' -o \
+            -name 'build.gradle.kts' \
+          \)
 
-      - name: Localizar Gradle Wrapper
-        id: gradle
+      - name: Localizar projeto Android
+        id: project
         shell: bash
         run: |
-          FILE="$(find . -maxdepth 4 -name gradlew -type f | head -n 1)"
+          WRAPPER="$(find . -maxdepth 5 -type f -name gradlew | head -n 1)"
 
-          if [ -z "$FILE" ]; then
-            echo "ERRO: Gradle Wrapper gradlew nao encontrado."
-            echo "Verifica se enviaste o projeto Android completo."
+          if [ -n "$WRAPPER" ]; then
+            PROJECT_DIR="$(dirname "$WRAPPER")"
+            chmod +x "$WRAPPER"
+            echo "mode=wrapper" >> "$GITHUB_OUTPUT"
+            echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          SETTINGS="$(find . -maxdepth 5 -type f \( \
+            -name settings.gradle -o \
+            -name settings.gradle.kts \
+          \) | head -n 1)"
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: nao foi encontrado gradlew nem settings.gradle."
+            echo "Envia o projeto Android completo, extraido do ZIP."
             exit 1
           fi
 
-          DIR="$(dirname "$FILE")"
-          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
-          chmod +x "$FILE"
+          PROJECT_DIR="$(dirname "$SETTINGS")"
+          echo "mode=system" >> "$GITHUB_OUTPUT"
+          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-          echo "Gradle Wrapper encontrado em: $FILE"
+      - name: Instalar Gradle
+        if: steps.project.outputs.mode == 'system'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
-      - name: Verificar versao do Java
-        run: java -version
+      - name: Compilar APK
+        working-directory: ${{ steps.project.outputs.dir }}
+        shell: bash
+        run: |
+          if [ "${{ steps.project.outputs.mode }}" = "wrapper" ]; then
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          else
+            gradle assembleDebug --no-daemon --stacktrace
+          fi
 
-      - name: Verificar versao do Gradle
-        working-directory: ${{ steps.gradle.outputs.dir }}
-        run: ./gradlew --version
-
-      - name: Compilar APK Debug
-        working-directory: ${{ steps.gradle.outputs.dir }}
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-
-      - name: Guardar APK gerado
+      - name: Guardar APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
