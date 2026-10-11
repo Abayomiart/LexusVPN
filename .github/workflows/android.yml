@@ -4,35 +4,15 @@ name: Build NEXUS VPN APK
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download repository
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Find Android project
-        id: project
-        shell: bash
-        run: |
-          echo "Procurando o projeto Android..."
-          find . -maxdepth 6 \
-            \( -name gradlew -o -name settings.gradle \
-            -o -name settings.gradle.kts \) -type f
-          FILE="$(find . -maxdepth 6 -name gradlew -type f | head -n 1)"
-          if [ -z "$FILE" ]; then
-            echo "ERRO: Gradle Wrapper gradlew não encontrado."
-            echo "Verifica se enviaste o projeto Android completo."
-            exit 1
-          fi
-          DIR="$(dirname "$FILE")"
-          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
-          echo "Projeto encontrado em: $DIR"
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -40,17 +20,39 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Build APK
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Locate Android project
+        id: project
+        shell: bash
+        run: |
+          if [ -f android/settings.gradle.kts ] || [ -f android/settings.gradle ]; then
+            echo "dir=android" >> "$GITHUB_OUTPUT"
+          elif [ -f settings.gradle.kts ] || [ -f settings.gradle ]; then
+            echo "dir=." >> "$GITHUB_OUTPUT"
+          else
+            echo "ERRO: settings.gradle não encontrado."
+            exit 1
+          fi
+
+      - name: Generate Gradle Wrapper
         working-directory: ${{ steps.project.outputs.dir }}
         run: |
+          gradle wrapper --gradle-version 8.9
+          test -f gradlew
           chmod +x gradlew
-          ./gradlew assembleDebug
+
+      - name: Build APK
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: ./gradlew assembleDebug
 
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: NEXUS-VPN-APK
-          path: |
-            **/build/outputs/apk/debug/*.apk
+          path: android/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
