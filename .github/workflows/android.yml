@@ -13,8 +13,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Download repository
         uses: actions/checkout@v4
+
+      - name: Find Android project
+        id: project
+        shell: bash
+        run: |
+          echo "Procurando o projeto Android..."
+          find . -maxdepth 6 \
+            \( -name gradlew -o -name settings.gradle \
+            -o -name settings.gradle.kts \) -type f
+          FILE="$(find . -maxdepth 6 -name gradlew -type f | head -n 1)"
+          if [ -z "$FILE" ]; then
+            echo "ERRO: Gradle Wrapper gradlew não encontrado."
+            echo "Verifica se enviaste o projeto Android completo."
+            exit 1
+          fi
+          DIR="$(dirname "$FILE")"
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "Projeto encontrado em: $DIR"
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -22,16 +40,17 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
       - name: Build APK
+        working-directory: ${{ steps.project.outputs.dir }}
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: NEXUS-VPN-APK
-          path: app/build/outputs/apk/debug/*.apk
+          path: |
+            **/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
