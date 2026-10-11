@@ -1,37 +1,58 @@
+
 name: Build NEXUS VPN APK
 
 on:
-workflow_dispatch:
-push:
-branches:
-- main
+  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
-build:
-runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest
 
-```
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  - name: Set up JDK 17
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '17'
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-  - name: Grant execute permission to Gradle Wrapper
-    run: |
-      chmod +x gradlew
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
-  - name: Build debug APK
-    run: |
-      ./gradlew assembleDebug
+      - name: Locate Android project
+        id: project
+        shell: bash
+        run: |
+          if [ -f android/settings.gradle.kts ] || [ -f android/settings.gradle ]; then
+            echo "dir=android" >> "$GITHUB_OUTPUT"
+          elif [ -f settings.gradle.kts ] || [ -f settings.gradle ]; then
+            echo "dir=." >> "$GITHUB_OUTPUT"
+          else
+            echo "ERRO: Projeto Android não encontrado."
+            exit 1
+          fi
 
-  - name: Upload APK
-    uses: actions/upload-artifact@v4
-    with:
-      name: NEXUS-VPN-APK
-      path: app/build/outputs/apk/debug/*.apk
-```
+      - name: Generate Gradle Wrapper
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: |
+          gradle wrapper --gradle-version 8.9
+          chmod +x gradlew
+
+      - name: Build APK
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: NEXUS-VPN-APK
+          path: android/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error￼Enter
