@@ -3,7 +3,9 @@ name: LexusVPN Android Build
 
 on:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
   pull_request:
   workflow_dispatch:
 
@@ -16,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Obter código do repositório
+      - name: Obter código
         uses: actions/checkout@v4
 
       - name: Instalar Java 17
@@ -28,40 +30,61 @@ jobs:
       - name: Localizar projeto Android
         shell: bash
         run: |
-          if [ -f android/gradlew ]; then
+          set -euo pipefail
+
+          if [ -f android/app/build.gradle.kts ]; then
             echo "BUILD_DIR=android" >> "$GITHUB_ENV"
-          elif [ -f gradlew ]; then
+          elif [ -f app/build.gradle.kts ]; then
             echo "BUILD_DIR=." >> "$GITHUB_ENV"
           else
-            echo "ERRO: Gradle Wrapper gradlew não encontrado."
-            echo "Confirma se o projeto Android está na raiz ou em android/."
+            echo "ERRO: app/build.gradle.kts não encontrado."
+            echo "Verifica a estrutura do projeto."
             exit 1
           fi
 
-      - name: Preparar Gradle Wrapper
+      - name: Preparar Gradle 8.10.2
         shell: bash
         run: |
+          set -euo pipefail
+
+          VERSION=8.10.2
+          URL="https://services.gradle.org/distributions/gradle-${VERSION}-bin.zip"
+
+          curl -fL "$URL" -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp
+
           cd "$BUILD_DIR"
+
+          mkdir -p gradle/wrapper
+
+          /tmp/gradle-${VERSION}/bin/gradle wrapper \
+            --gradle-version "$VERSION" \
+            --distribution-type bin
+
+          test -f gradle/wrapper/gradle-wrapper.jar
+          test -f gradle/wrapper/gradle-wrapper.properties
+          test -f gradlew
+
           chmod +x gradlew
-          test -f gradle/wrapper/gradle-wrapper.properties || {
-            echo "ERRO: gradle-wrapper.properties não encontrado."
-            exit 1
-          }
-          test -f gradle/wrapper/gradle-wrapper.jar || {
-            echo "ERRO: gradle-wrapper.jar não encontrado."
-            exit 1
-          }
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Verificar configuração
+      - name: Verificar versão Gradle
+        shell: bash
         run: |
+          set -euo pipefail
+          cd "$BUILD_DIR"
+          ./gradlew --version
+
+      - name: Verificar tarefas do projeto
+        shell: bash
+        run: |
+          set -euo pipefail
           cd "$BUILD_DIR"
           ./gradlew tasks --no-daemon
 
       - name: Compilar APK Debug
+        shell: bash
         run: |
+          set -euo pipefail
           cd "$BUILD_DIR"
           ./gradlew assembleDebug --no-daemon
 
@@ -73,4 +96,4 @@ jobs:
             android/**/build/outputs/apk/debug/*.apk
             build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 14￼Enter
+          retention-days: 14
