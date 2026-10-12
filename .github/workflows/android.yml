@@ -1,58 +1,128 @@
 
-name: Build NEXUS VPN APK
+name: LexusVPN Android Build
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: Compilar LexusVPN APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Obter código
         uses: actions/checkout@v4
 
-      - name: Set up Java
+      - name: Instalar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle wrapper --gradle-version 8.10.2
-
-      - name: Locate Android project
-        id: project
+      - name: Localizar projeto Android
         shell: bash
         run: |
-          if [ -f android/settings.gradle.kts ] || [ -f android/settings.gradle ]; then
-            echo "dir=android" >> "$GITHUB_OUTPUT"
-          elif [ -f settings.gradle.kts ] || [ -f settings.gradle ]; then
-            echo "dir=." >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+
+          if [ -f android/app/build.gradle.kts ] &&
+             { [ -f android/settings.gradle.kts ] ||
+               [ -f android/settings.gradle ]; }; then
+            echo "BUILD_DIR=android" >> "$GITHUB_ENV"
+          elif [ -f app/build.gradle.kts ] &&
+               { [ -f settings.gradle.kts ] ||
+                 [ -f settings.gradle ]; }; then
+            echo "BUILD_DIR=." >> "$GITHUB_ENV"
           else
-            echo "ERRO: Projeto Android não encontrado."
+            echo "ERRO: Estrutura do projeto Android não encontrada."
             exit 1
           fi
 
-      - name: Generate Gradle Wrapper
-        working-directory: ${{ steps.project.outputs.dir }}
+      - name: Configurar AndroidX
+        shell: bash
         run: |
-          gradle wrapper --gradle-version 8.10.2
+          set -euo pipefail
+
+          FILE="$BUILD_DIR/gradle.properties"
+          touch "$FILE"
+
+          if grep -Eq '^[[:space:]]*android\.useAndroidX[[:space:]]*=' "$FILE"; then
+            sed -i -E \
+              's/^[[:space:]]*android\.useAndroidX[[:space:]]*=.*/android.useAndroidX=true/' \
+              "$FILE"
+          else
+            echo 'android.useAndroidX=true' >> "$FILE"
+          fi
+
+          if grep -Eq '^[[:space:]]*android\.enableJetifier[[:space:]]*=' "$FILE"; then
+            sed -i -E \
+              's/^[[:space:]]*android\.enableJetifier[[:space:]]*=.*/android.enableJetifier=true/' \
+              "$FILE"
+          else
+            echo 'android.enableJetifier=true' >> "$FILE"
+          fi
+
+          echo "Propriedades AndroidX:"
+          grep -E '^android\.(useAndroidX|enableJetifier)=' "$FILE"
+
+      - name: Instalar Gradle 8.10.2
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION=8.10.2
+          curl -fL \
+            "https://services.gradle.org/distributions/gradle-${VERSION}-bin.zip" \
+            -o /tmp/gradle.zip
+
+          unzip -q /tmp/gradle.zip -d /tmp
+
+          echo "GRADLE_HOME=/tmp/gradle-${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Gerar Gradle Wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$BUILD_DIR"
+
+          "$GRADLE_HOME/bin/gradle" wrapper \
+            --gradle-version 8.10.2 \
+            --distribution-type bin
+
           chmod +x gradlew
 
-      - name: Build APK
-        working-directory: ${{ steps.project.outputs.dir }}
-        run: ./gradlew assembleDebug
+          test -f gradle/wrapper/gradle-wrapper.jar
+          test -f gradle/wrapper/gradle-wrapper.properties
 
-      - name: Upload APK
+      - name: Verificar configuração
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$BUILD_DIR"
+
+          test "$(grep '^android.useAndroidX=true$' gradle.properties)"
+          ./gradlew --version
+          ./gradlew tasks --no-daemon
+
+      - name: Compilar APK Debug
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$BUILD_DIR"
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
-        if: success()
         with:
-          name: NEXUS-VPN-APK
-          path: android/**/build/outputs/apk/debug/*.apk
-          if-no-files-found: error￼Enter
+          name: LexusVPN-debug-apk
+          path: |
+            android/**/build/outputs/apk/debug/*.apk
+            build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
