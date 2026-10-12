@@ -24,7 +24,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle wrapper --gradle-version 8.10.2
 
       - name: Locate Android project
         id: project
@@ -42,7 +42,7 @@ jobs:
       - name: Generate Gradle Wrapper
         working-directory: ${{ steps.project.outputs.dir }}
         run: |
-          gradle wrapper --gradle-version 8.9
+          gradle wrapper --gradle-version 8.10.2
           chmod +x gradlew
 
       - name: Build APK
