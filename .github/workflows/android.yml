@@ -1,128 +1,63 @@
-
-name: LexusVPN Android Build
+name: Build APK
 
 on:
   push:
-    branches: [main, master]
+    branches: [ main, dev ]
+    tags: [ 'v*' ]
   pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
-permissions:
-  contents: read
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
-    name: Compilar LexusVPN APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Obter código
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
 
-      - name: Instalar Java 17
-        uses: actions/setup-java@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4.7.0
         with:
-          distribution: temurin
-          java-version: '17'
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
 
-      - name: Localizar projeto Android
-        shell: bash
-        run: |
-          set -euo pipefail
+      - name: Install NDK 27.2.12479018
+        run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;27.2.12479018"
 
-          if [ -f android/app/build.gradle.kts ] &&
-             { [ -f android/settings.gradle.kts ] ||
-               [ -f android/settings.gradle ]; }; then
-            echo "BUILD_DIR=android" >> "$GITHUB_ENV"
-          elif [ -f app/build.gradle.kts ] &&
-               { [ -f settings.gradle.kts ] ||
-                 [ -f settings.gradle ]; }; then
-            echo "BUILD_DIR=." >> "$GITHUB_ENV"
-          else
-            echo "ERRO: Estrutura do projeto Android não encontrada."
-            exit 1
-          fi
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
 
-      - name: Configurar AndroidX
-        shell: bash
-        run: |
-          set -euo pipefail
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
 
-          FILE="$BUILD_DIR/gradle.properties"
-          touch "$FILE"
+      - name: Rename debug APK
+        run: mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/vpn-detector-debug.apk
 
-          if grep -Eq '^[[:space:]]*android\.useAndroidX[[:space:]]*=' "$FILE"; then
-            sed -i -E \
-              's/^[[:space:]]*android\.useAndroidX[[:space:]]*=.*/android.useAndroidX=true/' \
-              "$FILE"
-          else
-            echo 'android.useAndroidX=true' >> "$FILE"
-          fi
-
-          if grep -Eq '^[[:space:]]*android\.enableJetifier[[:space:]]*=' "$FILE"; then
-            sed -i -E \
-              's/^[[:space:]]*android\.enableJetifier[[:space:]]*=.*/android.enableJetifier=true/' \
-              "$FILE"
-          else
-            echo 'android.enableJetifier=true' >> "$FILE"
-          fi
-
-          echo "Propriedades AndroidX:"
-          grep -E '^android\.(useAndroidX|enableJetifier)=' "$FILE"
-
-      - name: Instalar Gradle 8.10.2
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          VERSION=8.10.2
-          curl -fL \
-            "https://services.gradle.org/distributions/gradle-${VERSION}-bin.zip" \
-            -o /tmp/gradle.zip
-
-          unzip -q /tmp/gradle.zip -d /tmp
-
-          echo "GRADLE_HOME=/tmp/gradle-${VERSION}" >> "$GITHUB_ENV"
-
-      - name: Gerar Gradle Wrapper
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$BUILD_DIR"
-
-          "$GRADLE_HOME/bin/gradle" wrapper \
-            --gradle-version 8.10.2 \
-            --distribution-type bin
-
-          chmod +x gradlew
-
-          test -f gradle/wrapper/gradle-wrapper.jar
-          test -f gradle/wrapper/gradle-wrapper.properties
-
-      - name: Verificar configuração
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$BUILD_DIR"
-
-          test "$(grep '^android.useAndroidX=true$' gradle.properties)"
-          ./gradlew --version
-          ./gradlew tasks --no-daemon
-
-      - name: Compilar APK Debug
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$BUILD_DIR"
-          ./gradlew assembleDebug --no-daemon
-
-      - name: Publicar APK
-        uses: actions/upload-artifact@v4
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4.6.2
         with:
-          name: LexusVPN-debug-apk
-          path: |
-            android/**/build/outputs/apk/debug/*.apk
-            build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          retention-days: 14
+          name: vpn-detector
+          path: app/build/outputs/apk/debug/vpn-detector-debug.apk
+
+      - name: Build release APK
+        if: startsWith(github.ref, 'refs/tags/')
+        run: ./gradlew assembleRelease
+
+      - name: Upload release APK
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: release-apk-${{ github.ref_name }}
+          path: app/build/outputs/apk/release/*.apk
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2.3.2
+        with:
+          files: app/build/outputs/apk/release/*.apk
+          generate_release_notes: true
