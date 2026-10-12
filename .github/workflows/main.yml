@@ -1,0 +1,76 @@
+
+name: LexusVPN Android Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compilar LexusVPN APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Obter código do repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Localizar projeto Android
+        shell: bash
+        run: |
+          if [ -f android/gradlew ]; then
+            echo "BUILD_DIR=android" >> "$GITHUB_ENV"
+          elif [ -f gradlew ]; then
+            echo "BUILD_DIR=." >> "$GITHUB_ENV"
+          else
+            echo "ERRO: Gradle Wrapper gradlew não encontrado."
+            echo "Confirma se o projeto Android está na raiz ou em android/."
+            exit 1
+          fi
+
+      - name: Preparar Gradle Wrapper
+        shell: bash
+        run: |
+          cd "$BUILD_DIR"
+          chmod +x gradlew
+          test -f gradle/wrapper/gradle-wrapper.properties || {
+            echo "ERRO: gradle-wrapper.properties não encontrado."
+            exit 1
+          }
+          test -f gradle/wrapper/gradle-wrapper.jar || {
+            echo "ERRO: gradle-wrapper.jar não encontrado."
+            exit 1
+          }
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Verificar configuração
+        run: |
+          cd "$BUILD_DIR"
+          ./gradlew tasks --no-daemon
+
+      - name: Compilar APK Debug
+        run: |
+          cd "$BUILD_DIR"
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Publicar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LexusVPN-debug-apk
+          path: |
+            android/**/build/outputs/apk/debug/*.apk
+            build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14￼Enter
